@@ -78,7 +78,7 @@
           | last) | default('NOT_SET')
       }}
 
-- name: SSH | Evaluate PermitRootLogin (strict: no)
+- name: SSH | Evaluate PermitRootLogin
   ansible.builtin.set_fact:
     audit_results: "{{ audit_results + [check_result] }}"
     audit_score: "{{ audit_score | int + (1 if check_result.status == 'OK' else 0) }}"

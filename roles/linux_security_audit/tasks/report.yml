@@ -27,7 +27,7 @@
   ansible.builtin.set_fact:
     summary_fail: "{{ (audit_results | selectattr('status','equalto','FAIL') | list | length) | int }}"
     summary_warn: "{{ (audit_results | selectattr('status','equalto','WARN') | list | length) | int }}"
-    summary_ok:   "{{ (audit_results | selectattr('status','equalto','OK')   | list | length) | int }}"
+    summary_ok: "{{ (audit_results | selectattr('status','equalto','OK')   | list | length) | int }}"
     summary_info: "{{ (audit_results | selectattr('status','equalto','INFO') | list | length) | int }}"
 
 - name: Sort results for stable output
