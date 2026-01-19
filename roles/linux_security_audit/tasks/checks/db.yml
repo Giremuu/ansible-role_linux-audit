@@ -1,6 +1,4 @@
 ---
-# Database checks (generic) - ANSSI-style, <=150 lines
-
 - name: DB | Detect DB packages (postgresql/mariadb/mysql)
   ansible.builtin.shell: |
     dpkg-query -W -f='${Package}\n' postgresql 2>/dev/null || true

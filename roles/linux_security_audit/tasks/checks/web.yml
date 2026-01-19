@@ -1,6 +1,4 @@
 ---
-# Web server checks (generic) - ANSSI-style, <=150 lines
-
 - name: WEB | Detect web server packages (nginx/apache2)
   ansible.builtin.shell: |
     dpkg-query -W -f='${Package}\n' nginx 2>/dev/null || true

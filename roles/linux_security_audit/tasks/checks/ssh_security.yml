@@ -1,6 +1,5 @@
 ---
-# SSH Security Checks (audit-only, strict policy)
-# Source of truth: sshd effective configuration via `sshd -T`.
+# Source of truth: sshd effective configuration via `sshd -T`
 
 - name: SSH | Collect effective sshd settings (sshd -T)
   ansible.builtin.shell: |
@@ -79,7 +78,6 @@
           | last) | default('NOT_SET')
       }}
 
-# --- ANSSI-LIN-SSH-01: PermitRootLogin must be "no"
 - name: SSH | Evaluate PermitRootLogin (strict: no)
   ansible.builtin.set_fact:
     audit_results: "{{ audit_results + [check_result] }}"
@@ -102,7 +100,6 @@
         }}
       remediation: "Set 'PermitRootLogin no' in sshd config (or drop-in) and reload sshd."
 
-# --- ANSSI-LIN-SSH-02: PasswordAuthentication must be "no"
 - name: SSH | Evaluate PasswordAuthentication (strict: no)
   ansible.builtin.set_fact:
     audit_results: "{{ audit_results + [check_result] }}"
@@ -125,7 +122,6 @@
         }}
       remediation: "Set 'PasswordAuthentication no' in sshd config (or drop-in), use SSH keys, and reload sshd."
 
-# --- ANSSI-LIN-SSH-03: Protocol 2 only
 - name: SSH | Evaluate Protocol version
   ansible.builtin.set_fact:
     audit_results: "{{ audit_results + [check_result] }}"

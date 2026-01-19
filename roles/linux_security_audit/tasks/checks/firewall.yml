@@ -1,6 +1,4 @@
 ---
-# Firewall Checks (ANSSI-style)
-
 - name: FW | Check UFW status (if present)
   ansible.builtin.command: ufw status
   register: ufw_status

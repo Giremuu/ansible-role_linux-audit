@@ -39,7 +39,7 @@
   tags: [network]
 
 
-# Optional role-specific checks (only if you create these files)
+# Optional role-specific checks
 - name: Run Web server checks
   ansible.builtin.include_tasks: checks/web.yml
   when: (system_role | default('generic')) == 'web'
