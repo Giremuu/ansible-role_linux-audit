@@ -27,7 +27,7 @@
   ansible.builtin.set_fact:
     summary_fail: "{{ (audit_results | selectattr('status','equalto','FAIL') | list | length) | int }}"
     summary_warn: "{{ (audit_results | selectattr('status','equalto','WARN') | list | length) | int }}"
-    summary_ok: "{{ (audit_results | selectattr('status','equalto','OK')   | list | length) | int }}"
+    summary_ok: "{{ (audit_results | selectattr('status','equalto','OK') | list | length) | int }}"
     summary_info: "{{ (audit_results | selectattr('status','equalto','INFO') | list | length) | int }}"
 
 - name: Sort results for stable output
@@ -49,10 +49,10 @@
       ==========================================
       SECURITY AUDIT REPORT ({{ audit_framework | default('anssi') | upper }})
       ==========================================
-      Host   : {{ inventory_hostname }}
-      Run    : {{ audit_run_iso8601 }}
-      Profile: {{ audit_profile | default('server') }}
-      Role   : {{ system_role | default('generic') }}
+      Host : {{ inventory_hostname }}
+      Run : {{ audit_run_iso8601 }}
+      Profile : {{ audit_profile | default('server') }}
+      Role : {{ system_role | default('generic') }}
       ==========================================
 
 - name: Display summary
@@ -61,7 +61,7 @@
       Summary:
         FAIL: {{ summary_fail }}
         WARN: {{ summary_warn }}
-        OK  : {{ summary_ok }}
+        OK : {{ summary_ok }}
         INFO: {{ summary_info }}
 
 - name: Display each check (one line)
@@ -71,10 +71,10 @@
   vars:
     status_symbol: >-
       {{
-        '[   OK   ]' if item.status == 'OK'
-        else '[ FAIL ]' if item.status == 'FAIL'
-        else '[ WARN ]' if item.status == 'WARN'
-        else '[ INFO ]'
+        '[OK]' if item.status == 'OK'
+        else '[FAIL]' if item.status == 'FAIL'
+        else '[WARN]' if item.status == 'WARN'
+        else '[INFO]'
       }}
 
 - name: Display actionable findings
@@ -88,11 +88,11 @@
       None (no FAIL/WARN findings)
       {% else %}
       {% for item in findings %}
-      {{ '[ FAIL ]' if item.status == 'FAIL' else '[ WARN ]' }} [{{ item.severity }}] {{ item.id }} - {{ item.name }}
-        Category   : {{ item.category }}
-        Detail     : {{ item.detail }}
-        Evidence   : {{ item.evidence }}
-        Remediation: {{ item.remediation }}
+      {{ '[FAIL]' if item.status == 'FAIL' else '[ WARN ]' }} [{{ item.severity }}] {{ item.id }} - {{ item.name }}
+        Category : {{ item.category }}
+        Detail : {{ item.detail }}
+        Evidence : {{ item.evidence }}
+        Remediation : {{ item.remediation }}
       {% endfor %}
       {% endif %}
 
@@ -102,9 +102,9 @@
       ==========================================
       SECURITY SCORE
       ==========================================
-      Score     : {{ audit_score }}/{{ total_checks }}
-      Percentage: {{ score_percentage }}%
-      Rating    : {{ security_rating }}
+      Score : {{ audit_score }}/{{ total_checks }}
+      Percentage : {{ score_percentage }}%
+      Rating : {{ security_rating }}
       ==========================================
 
 

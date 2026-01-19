@@ -1,4 +1,7 @@
 ---
+- name: FW | Gather service facts
+  ansible.builtin.service_facts:
+
 - name: FW | Check UFW status (if present)
   ansible.builtin.command: ufw status
   register: ufw_status
@@ -22,11 +25,9 @@
       evidence: "{{ 'ufw status rc=' ~ ufw_status.rc ~ ' first_line=' ~ ((ufw_status.stdout_lines | default([]) | first) | default('')) }}"
       remediation: "Enable a host firewall (UFW, nftables, or firewalld) and ensure a default deny policy for inbound traffic"
 
-- name: FW | Check firewalld status (systemd)
-  ansible.builtin.command: systemctl is-active firewalld
-  register: firewalld_active
-  changed_when: false
-  failed_when: false
+- name: FW | Determine firewalld active (systemd)
+  ansible.builtin.set_fact:
+    firewalld_active: "{{ (ansible_facts.services['firewalld.service'].state | default('')) == 'running' }}"
 
 - name: FW | Evaluate firewalld active
   ansible.builtin.set_fact:
@@ -34,7 +35,7 @@
     audit_score: "{{ audit_score | int + (1 if check_result.status == 'OK' else 0) }}"
     total_checks: "{{ total_checks | int + 1 }}"
   vars:
-    fwld_ok: "{{ firewalld_active.rc == 0 and (firewalld_active.stdout | trim) == 'active' }}"
+    fwld_ok: "{{ firewalld_active | bool }}"
     check_result:
       id: "ANSSI-LIN-FW-02"
       category: "FIREWALL"
@@ -42,14 +43,12 @@
       severity: "HIGH"
       status: "{{ 'OK' if fwld_ok else 'INFO' }}"
       detail: "{{ 'firewalld is active' if fwld_ok else 'firewalld is not active or not installed' }}"
-      evidence: "{{ 'systemctl is-active firewalld => ' ~ (firewalld_active.stdout | default('')) ~ ' (rc=' ~ firewalld_active.rc ~ ')' }}"
+      evidence: "{{ 'service_facts firewalld.service state=' ~ (ansible_facts.services['firewalld.service'].state | default('NOT_FOUND')) }}"
       remediation: "Enable a host firewall (UFW, nftables, or firewalld) and ensure a default deny policy for inbound traffic"
 
-- name: FW | Check nftables service status (systemd)
-  ansible.builtin.command: systemctl is-active nftables
-  register: nftables_active
-  changed_when: false
-  failed_when: false
+- name: FW | Determine nftables active (systemd)
+  ansible.builtin.set_fact:
+    nftables_active: "{{ (ansible_facts.services['nftables.service'].state | default('')) == 'running' }}"
 
 - name: FW | Evaluate nftables active
   ansible.builtin.set_fact:
@@ -57,7 +56,7 @@
     audit_score: "{{ audit_score | int + (1 if check_result.status == 'OK' else 0) }}"
     total_checks: "{{ total_checks | int + 1 }}"
   vars:
-    nft_ok: "{{ nftables_active.rc == 0 and (nftables_active.stdout | trim) == 'active' }}"
+    nft_ok: "{{ nftables_active | bool }}"
     check_result:
       id: "ANSSI-LIN-FW-03"
       category: "FIREWALL"
@@ -65,19 +64,12 @@
       severity: "HIGH"
       status: "{{ 'OK' if nft_ok else 'INFO' }}"
       detail: "{{ 'nftables service is active' if nft_ok else 'nftables service is not active or not installed' }}"
-      evidence: "{{ 'systemctl is-active nftables => ' ~ (nftables_active.stdout | default('')) ~ ' (rc=' ~ nftables_active.rc ~ ')' }}"
+      evidence: "{{ 'service_facts nftables.service state=' ~ (ansible_facts.services['nftables.service'].state | default('NOT_FOUND')) }}"
       remediation: "Enable a host firewall (UFW, nftables, or firewalld) and ensure a default deny policy for inbound traffic"
 
 - name: FW | Determine if any host firewall is enabled
   ansible.builtin.set_fact:
-    host_firewall_enabled: >-
-      {{
-        (
-          ((ufw_status.rc == 0) and ('Status: active' in (ufw_status.stdout | default(''))))
-          or ((firewalld_active.rc == 0) and ((firewalld_active.stdout | trim) == 'active'))
-          or ((nftables_active.rc == 0) and ((nftables_active.stdout | trim) == 'active'))
-        )
-      }}
+    host_firewall_enabled: "{{ ufw_active or firewalld_active or nftables_active }}"
 
 - name: FW | Final evaluation (at least one firewall active)
   ansible.builtin.set_fact:
@@ -93,7 +85,7 @@
       status: "{{ 'OK' if host_firewall_enabled else 'FAIL' }}"
       detail: "{{ 'At least one firewall backend is active' if host_firewall_enabled else 'No firewall backend detected as active (UFW/firewalld/nftables)' }}"
       evidence: >-
-        ufw_active={{ ((ufw_status.rc == 0) and ('Status: active' in (ufw_status.stdout | default('')))) | string }},
-        firewalld_active={{ ((firewalld_active.rc == 0) and ((firewalld_active.stdout | trim) == 'active')) | string }},
-        nftables_active={{ ((nftables_active.rc == 0) and ((nftables_active.stdout | trim) == 'active')) | string }}
+        ufw_active={{ ufw_active | string }},
+        firewalld_active={{ firewalld_active | string }},
+        nftables_active={{ nftables_active | string }}
       remediation: "Enable and configure a host firewall (UFW, nftables, or firewalld) with an inbound deny-by-default policy and only necessary ports allowed"

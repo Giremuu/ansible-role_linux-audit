@@ -1,4 +1,7 @@
 ---
+- name: NET | Gather service facts
+  ansible.builtin.service_facts:
+
 - name: NET | Count listening TCP/UDP sockets
   ansible.builtin.shell: |
     set -o pipefail
@@ -25,12 +28,15 @@
       evidence: "ss -tulpn (count) => {{ n }}"
       remediation: "Disable unnecessary services and restrict exposed ports via host firewall and service configuration"
 
-
-- name: NET | Check if telnet service is active (systemd)
-  ansible.builtin.command: systemctl is-active telnet
-  register: telnet_active
-  changed_when: false
-  failed_when: false
+- name: NET | Determine telnet active (systemd)
+  ansible.builtin.set_fact:
+    telnet_active: >-
+      {{
+        (ansible_facts.services['telnet.service'].state | default('')) == 'running'
+        or (ansible_facts.services['telnet.socket'].state | default('')) == 'running'
+        or (ansible_facts.services['xinetd.service'].state | default('')) == 'running'
+        or (ansible_facts.services['inetd.service'].state | default('')) == 'running'
+      }}
 
 - name: NET | Evaluate telnet disabled
   ansible.builtin.set_fact:
@@ -38,15 +44,19 @@
     audit_score: "{{ audit_score | int + (1 if check_result.status == 'OK' else 0) }}"
     total_checks: "{{ total_checks | int + 1 }}"
   vars:
-    ok: "{{ telnet_active.rc != 0 or (telnet_active.stdout | trim) != 'active' }}"
+    ok: "{{ not (telnet_active | bool) }}"
     check_result:
       id: "ANSSI-LIN-NET-02"
       category: "NETWORK"
       name: "Telnet service disabled"
       severity: "HIGH"
       status: "{{ 'OK' if ok else 'FAIL' }}"
-      detail: "{{ 'telnet is not active' if ok else 'telnet is active' }}"
-      evidence: "systemctl is-active telnet => {{ (telnet_active.stdout | default('')) | trim }} (rc={{ telnet_active.rc }})"
+      detail: "{{ 'telnet is not active' if ok else 'telnet is active (or inetd/xinetd is running)' }}"
+      evidence: >-
+        telnet.service={{ ansible_facts.services['telnet.service'].state | default('NOT_FOUND') }},
+        telnet.socket={{ ansible_facts.services['telnet.socket'].state | default('NOT_FOUND') }},
+        xinetd.service={{ ansible_facts.services['xinetd.service'].state | default('NOT_FOUND') }},
+        inetd.service={{ ansible_facts.services['inetd.service'].state | default('NOT_FOUND') }}
       remediation: "Remove/disable telnet (use SSH). Ensure no inetd/xinetd telnet listeners are enabled."
 
 - name: NET | Read IPv6 disable flag
