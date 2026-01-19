@@ -6,8 +6,8 @@
     score_percentage: >-
       {{
         (
-          (audit_score | float / total_checks | float)
-          if (total_checks | float) > 0
+          ((audit_score | int) | float / (total_checks | int) | float)
+          if (total_checks | int) > 0
           else 0
         ) * 100
         | round(1)
@@ -25,15 +25,14 @@
 
 - name: Compute summary counts
   ansible.builtin.set_fact:
-    summary_fail: "{{ (audit_results | selectattr('status','equalto','FAIL') | list | length) | int }}"
-    summary_warn: "{{ (audit_results | selectattr('status','equalto','WARN') | list | length) | int }}"
-    summary_ok: "{{ (audit_results | selectattr('status','equalto','OK') | list | length) | int }}"
-    summary_info: "{{ (audit_results | selectattr('status','equalto','INFO') | list | length) | int }}"
+    summary_fail: "{{ (audit_results | selectattr('status', 'equalto', 'FAIL') | list | length) | int }}"
+    summary_warn: "{{ (audit_results | selectattr('status', 'equalto', 'WARN') | list | length) | int }}"
+    summary_ok: "{{ (audit_results | selectattr('status', 'equalto', 'OK') | list | length) | int }}"
+    summary_info: "{{ (audit_results | selectattr('status', 'equalto', 'INFO') | list | length) | int }}"
 
 - name: Sort results for stable output
   ansible.builtin.set_fact:
     audit_results_sorted: "{{ audit_results | sort(attribute='id') | sort(attribute='category') }}"
-
 
 - name: Set audit run timestamp (controller)
   ansible.builtin.set_fact:
@@ -83,12 +82,12 @@
       ==========================================
       ACTIONABLE FINDINGS
       ==========================================
-      {% set findings = (audit_results_sorted | selectattr('status','in',['FAIL','WARN']) | list) %}
+      {% set findings = audit_results_sorted | selectattr('status', 'in', ['FAIL', 'WARN']) | list %}
       {% if findings | length == 0 %}
       None (no FAIL/WARN findings)
       {% else %}
       {% for item in findings %}
-      {{ '[FAIL]' if item.status == 'FAIL' else '[ WARN ]' }} [{{ item.severity }}] {{ item.id }} - {{ item.name }}
+      {{ '[FAIL]' if item.status == 'FAIL' else '[WARN]' }} [{{ item.severity }}] {{ item.id }} - {{ item.name }}
         Category : {{ item.category }}
         Detail : {{ item.detail }}
         Evidence : {{ item.evidence }}
@@ -106,7 +105,6 @@
       Percentage : {{ score_percentage }}%
       Rating : {{ security_rating }}
       ==========================================
-
 
 # ---------- JSON EXPORT ----------
 
@@ -142,7 +140,7 @@
         ~ '/security_audit_'
         ~ inventory_hostname
         ~ '_'
-        ~ (audit_run_iso8601 | regex_replace(':','') | regex_replace('\\+','_') )
+        ~ (audit_run_iso8601 | regex_replace(':', '') | regex_replace('\\+', '_'))
         ~ '.json'
       }}
     mode: "0600"
@@ -158,7 +156,7 @@
         ~ '/security_audit_'
         ~ inventory_hostname
         ~ '_'
-        ~ (audit_run_iso8601 | regex_replace(':','') | regex_replace('\\+','_') )
+        ~ (audit_run_iso8601 | regex_replace(':', '') | regex_replace('\\+', '_'))
         ~ '.json'
       }}
   when: save_report_to_file | default(true) | bool
