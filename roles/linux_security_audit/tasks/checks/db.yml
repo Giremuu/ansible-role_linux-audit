@@ -56,13 +56,17 @@
     f="$(ls -1 /etc/postgresql/*/main/postgresql.conf 2>/dev/null | head -n1 || true)"
     if [ -z "$f" ]; then echo "NO_PG_CONF"; exit 0; fi
     # read last non-comment listen_addresses
-    v="$(grep -E '^[[:space:]]*listen_addresses[[:space:]]*=' "$f" | grep -vE '^[[:space:]]*#' | tail -n1 | sed -E "s/.*=[[:space:]]*'?([^']*)'?.*/\1/")"
+    v="$(grep -E '^[[:space:]]*listen_addresses[[:space:]]*=' "$f" \
+      | grep -vE '^[[:space:]]*#' \
+      | tail -n1 \
+      | sed -E 's/.*=[[:space:]]*'\''?([^'\'']*)'\''?.*/\1/')"
     echo "${f}:${v:-NOT_SET}"
   args:
     executable: /bin/bash
   register: pg_listen
   changed_when: false
   failed_when: false
+
 
 - name: DB | Evaluate PostgreSQL bind scope
   ansible.builtin.set_fact:

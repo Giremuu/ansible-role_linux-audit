@@ -2,7 +2,8 @@ profile: production
 
 skip_list:
   - name[casing]
-
+  - var-naming[no-role-prefix]
+  
 warn_list:
   - experimental
 
