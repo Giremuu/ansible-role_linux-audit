@@ -13,4 +13,4 @@ all:
       audit_profile: server
       system_role: generic
 
-    #It's possible to adapt to put your ip_host or/and yout user in your vault's files despite here
+    # It's possible to adapt to put your ip_host or/and yout user in your vault's files despite here
