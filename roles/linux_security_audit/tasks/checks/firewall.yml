@@ -8,13 +8,16 @@
   changed_when: false
   failed_when: false
 
+- name: FW | Determine UFW active (fact)
+  ansible.builtin.set_fact:
+    ufw_active: "{{ (ufw_status.rc == 0) and ('Status: active' in (ufw_status.stdout | default(''))) }}"
+
 - name: FW | Evaluate UFW active
   ansible.builtin.set_fact:
     audit_results: "{{ audit_results + [check_result] }}"
     audit_score: "{{ audit_score | int + (1 if check_result.status == 'OK' else 0) }}"
     total_checks: "{{ total_checks | int + 1 }}"
   vars:
-    ufw_active: "{{ (ufw_status.rc == 0) and ('Status: active' in (ufw_status.stdout | default(''))) }}"
     check_result:
       id: "ANSSI-LIN-FW-01"
       category: "FIREWALL"
@@ -69,7 +72,12 @@
 
 - name: FW | Determine if any host firewall is enabled
   ansible.builtin.set_fact:
-    host_firewall_enabled: "{{ ufw_active or firewalld_active or nftables_active }}"
+    host_firewall_enabled: >-
+      {{
+        (ufw_active | default(false) | bool)
+        or (firewalld_active | default(false) | bool)
+        or (nftables_active | default(false) | bool)
+      }}
 
 - name: FW | Final evaluation (at least one firewall active)
   ansible.builtin.set_fact:
@@ -85,7 +93,7 @@
       status: "{{ 'OK' if host_firewall_enabled else 'FAIL' }}"
       detail: "{{ 'At least one firewall backend is active' if host_firewall_enabled else 'No firewall backend detected as active (UFW/firewalld/nftables)' }}"
       evidence: >-
-        ufw_active={{ ufw_active | string }},
-        firewalld_active={{ firewalld_active | string }},
-        nftables_active={{ nftables_active | string }}
+        ufw_active={{ (ufw_active | default(false) | bool) | string }},
+        firewalld_active={{ (firewalld_active | default(false) | bool) | string }},
+        nftables_active={{ (nftables_active | default(false) | bool) | string }}
       remediation: "Enable and configure a host firewall (UFW, nftables, or firewalld) with an inbound deny-by-default policy and only necessary ports allowed"
