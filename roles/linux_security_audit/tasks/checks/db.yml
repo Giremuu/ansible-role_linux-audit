@@ -1,0 +1,94 @@
+---
+# Database checks (generic) - ANSSI-style, <=150 lines
+
+- name: DB | Detect DB packages (postgresql/mariadb/mysql)
+  ansible.builtin.shell: |
+    dpkg-query -W -f='${Package}\n' postgresql 2>/dev/null || true
+    dpkg-query -W -f='${Package}\n' mariadb-server 2>/dev/null || true
+    dpkg-query -W -f='${Package}\n' mysql-server 2>/dev/null || true
+  register: db_pkgs
+  changed_when: false
+  failed_when: false
+
+- name: DB | Evaluate DB detected (info)
+  ansible.builtin.set_fact:
+    audit_results: "{{ audit_results + [check_result] }}"
+    total_checks: "{{ total_checks | int + 1 }}"
+  vars:
+    detected: "{{ (db_pkgs.stdout_lines | default([])) }}"
+    check_result:
+      id: "ANSSI-LIN-DB-01"
+      category: "DB"
+      name: "Database service detected"
+      severity: "LOW"
+      status: "INFO"
+      detail: "{{ detected | length | ternary('Detected: ' ~ (detected | join(', ')), 'No DB package detected') }}"
+      evidence: "dpkg-query postgresql/mariadb/mysql => {{ detected | join(', ') }}"
+      remediation: "If DB is not required, remove it; otherwise harden and restrict network exposure"
+
+- name: DB | Check if DB ports are listening (5432/3306)
+  ansible.builtin.shell: |
+    set -o pipefail
+    ss -H -ltn 2>/dev/null | awk '{print $4}' | grep -E ':(5432|3306)$' | wc -l
+  args:
+    executable: /bin/bash
+  register: db_listen
+  changed_when: false
+  failed_when: false
+
+- name: DB | Evaluate DB port exposure
+  ansible.builtin.set_fact:
+    audit_results: "{{ audit_results + [check_result] }}"
+    total_checks: "{{ total_checks | int + 1 }}"
+  vars:
+    n: "{{ db_listen.stdout | int }}"
+    check_result:
+      id: "ANSSI-LIN-DB-02"
+      category: "DB"
+      name: "DB ports exposure (5432/3306)"
+      severity: "MEDIUM"
+      status: "INFO"
+      detail: "{{ n }} socket(s) listening on DB ports"
+      evidence: "ss ports 5432/3306 count => {{ n }}"
+      remediation: "Restrict DB ports to required interfaces and networks; enforce firewall rules and authentication hardening"
+
+- name: DB | Check PostgreSQL listen_addresses (if config exists)
+  ansible.builtin.shell: |
+    set -o pipefail
+    f="$(ls -1 /etc/postgresql/*/main/postgresql.conf 2>/dev/null | head -n1 || true)"
+    if [ -z "$f" ]; then echo "NO_PG_CONF"; exit 0; fi
+    # read last non-comment listen_addresses
+    v="$(grep -E '^[[:space:]]*listen_addresses[[:space:]]*=' "$f" | grep -vE '^[[:space:]]*#' | tail -n1 | sed -E "s/.*=[[:space:]]*'?([^']*)'?.*/\1/")"
+    echo "${f}:${v:-NOT_SET}"
+  args:
+    executable: /bin/bash
+  register: pg_listen
+  changed_when: false
+  failed_when: false
+
+- name: DB | Evaluate PostgreSQL bind scope
+  ansible.builtin.set_fact:
+    audit_results: "{{ audit_results + [check_result] }}"
+    audit_score: "{{ audit_score | int + (1 if check_result.status == 'OK' else 0) }}"
+    total_checks: "{{ total_checks | int + 1 }}"
+  vars:
+    out: "{{ pg_listen.stdout | trim }}"
+    is_present: "{{ out != 'NO_PG_CONF' }}"
+    val: "{{ (out.split(':') | last) if is_present else '' }}"
+    # OK if local-only; WARN if wildcard/all
+    ok: "{{ val in ['localhost', '127.0.0.1', '::1'] }}"
+    risky: "{{ val in ['*', '0.0.0.0', ''] }}"
+    check_result:
+      id: "ANSSI-LIN-DB-03"
+      category: "DB"
+      name: "PostgreSQL bind scope (listen_addresses)"
+      severity: "HIGH"
+      status: >-
+        {{
+          'INFO' if not is_present
+          else 'OK' if ok
+          else 'WARN'
+        }}
+      detail: "{{ out }}"
+      evidence: "{{ out }}"
+      remediation: "Bind DB to localhost or dedicated internal interface; avoid wildcard listen_addresses unless strictly required and protected"

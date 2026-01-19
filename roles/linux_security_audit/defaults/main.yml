@@ -1,0 +1,11 @@
+---
+audit_framework: anssi         # Maybe add baseline or custom or CIS framework one day..
+audit_profile: server          # Overridable in inventory
+system_role: generic           # Overridable in inventory
+
+max_password_age_days: 365     # Change every year
+max_uptime_days: 7             # It's important to reboot your servers somedays
+
+# Output options (It's optional, just for a writing report in JSON)
+save_report_to_file: true
+report_output_dir: "/var/tmp"

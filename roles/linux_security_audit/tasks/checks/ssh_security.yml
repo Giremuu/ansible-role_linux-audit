@@ -1,0 +1,149 @@
+---
+# SSH Security Checks (audit-only, strict policy)
+# Source of truth: sshd effective configuration via `sshd -T`.
+
+- name: SSH | Collect effective sshd settings (sshd -T)
+  ansible.builtin.shell: |
+    set -o pipefail
+    sshd -T 2>/dev/null | grep -E '^(permitrootlogin|passwordauthentication|protocol)\s'
+  args:
+    executable: /bin/bash
+  register: sshd_effective
+  changed_when: false
+  failed_when: false
+
+- name: SSH | Collect explicit directives from /etc/ssh/sshd_config (secondary evidence)
+  ansible.builtin.shell: |
+    set -o pipefail
+    grep -E '^[[:space:]]*(PermitRootLogin|PasswordAuthentication|Protocol)[[:space:]]+' /etc/ssh/sshd_config \
+      | grep -vE '^[[:space:]]*#' \
+      | tail -n 50
+  args:
+    executable: /bin/bash
+  register: sshd_cfg_lines
+  changed_when: false
+  failed_when: false
+
+- name: SSH | Parse effective values
+  ansible.builtin.set_fact:
+    sshd_t_ok: "{{ (sshd_effective.rc | int) == 0 }}"
+    prl_effective: >-
+      {{
+        (
+          sshd_effective.stdout_lines
+          | select('match','^permitrootlogin\\s+')
+          | list
+          | first
+          | default('permitrootlogin UNKNOWN')
+        ).split() | last
+      }}
+    pa_effective: >-
+      {{
+        (
+          sshd_effective.stdout_lines
+          | select('match','^passwordauthentication\\s+')
+          | list
+          | first
+          | default('passwordauthentication UNKNOWN')
+        ).split() | last
+      }}
+    proto_effective: >-
+      {{
+        (
+          sshd_effective.stdout_lines
+          | select('match','^protocol\\s+')
+          | list
+          | first
+          | default('protocol 2')
+        ).split() | last
+      }}
+    prl_line: >-
+      {{
+        (sshd_cfg_lines.stdout_lines
+          | select('match', '^[[:space:]]*PermitRootLogin[[:space:]]+')
+          | list
+          | last) | default('NOT_SET')
+      }}
+    pa_line: >-
+      {{
+        (sshd_cfg_lines.stdout_lines
+          | select('match', '^[[:space:]]*PasswordAuthentication[[:space:]]+')
+          | list
+          | last) | default('NOT_SET')
+      }}
+    proto_line: >-
+      {{
+        (sshd_cfg_lines.stdout_lines
+          | select('match', '^[[:space:]]*Protocol[[:space:]]+')
+          | list
+          | last) | default('NOT_SET')
+      }}
+
+# --- ANSSI-LIN-SSH-01: PermitRootLogin must be "no"
+- name: SSH | Evaluate PermitRootLogin (strict: no)
+  ansible.builtin.set_fact:
+    audit_results: "{{ audit_results + [check_result] }}"
+    audit_score: "{{ audit_score | int + (1 if check_result.status == 'OK' else 0) }}"
+    total_checks: "{{ total_checks | int + 1 }}"
+  vars:
+    file_hint: "{{ '; file=' ~ (prl_line if prl_line != 'NOT_SET' else 'NOT_SET') }}"
+    check_result:
+      id: "ANSSI-LIN-SSH-01"
+      category: "SSH"
+      name: "Disable SSH root login"
+      severity: "HIGH"
+      status: "{{ 'INFO' if not sshd_t_ok else ('OK' if prl_effective == 'no' else 'FAIL') }}"
+      detail: "{{ 'Unable to evaluate effective config (sshd -T failed)' if not sshd_t_ok else ('Effective PermitRootLogin=' ~ prl_effective) }}"
+      evidence: >-
+        {{
+          ('sshd -T: permitrootlogin ' ~ prl_effective ~ file_hint)
+          if sshd_t_ok
+          else ('sshd -T failed (rc=' ~ (sshd_effective.rc | string) ~ ').')
+        }}
+      remediation: "Set 'PermitRootLogin no' in sshd config (or drop-in) and reload sshd."
+
+# --- ANSSI-LIN-SSH-02: PasswordAuthentication must be "no"
+- name: SSH | Evaluate PasswordAuthentication (strict: no)
+  ansible.builtin.set_fact:
+    audit_results: "{{ audit_results + [check_result] }}"
+    audit_score: "{{ audit_score | int + (1 if check_result.status == 'OK' else 0) }}"
+    total_checks: "{{ total_checks | int + 1 }}"
+  vars:
+    file_hint: "{{ '; file=' ~ (pa_line if pa_line != 'NOT_SET' else 'NOT_SET') }}"
+    check_result:
+      id: "ANSSI-LIN-SSH-02"
+      category: "SSH"
+      name: "Disable SSH password authentication"
+      severity: "HIGH"
+      status: "{{ 'INFO' if not sshd_t_ok else ('OK' if pa_effective == 'no' else 'WARN') }}"
+      detail: "{{ 'Unable to evaluate effective config (sshd -T failed)' if not sshd_t_ok else ('Effective PasswordAuthentication=' ~ pa_effective) }}"
+      evidence: >-
+        {{
+          ('sshd -T: passwordauthentication ' ~ pa_effective ~ file_hint)
+          if sshd_t_ok
+          else ('sshd -T failed (rc=' ~ (sshd_effective.rc | string) ~ ').')
+        }}
+      remediation: "Set 'PasswordAuthentication no' in sshd config (or drop-in), use SSH keys, and reload sshd."
+
+# --- ANSSI-LIN-SSH-03: Protocol 2 only
+- name: SSH | Evaluate Protocol version
+  ansible.builtin.set_fact:
+    audit_results: "{{ audit_results + [check_result] }}"
+    audit_score: "{{ audit_score | int + (1 if check_result.status == 'OK' else 0) }}"
+    total_checks: "{{ total_checks | int + 1 }}"
+  vars:
+    file_hint: "{{ '; file=' ~ (proto_line if proto_line != 'NOT_SET' else 'NOT_SET') }}"
+    check_result:
+      id: "ANSSI-LIN-SSH-03"
+      category: "SSH"
+      name: "Use SSH Protocol 2 only"
+      severity: "MEDIUM"
+      status: "{{ 'INFO' if not sshd_t_ok else ('OK' if proto_effective == '2' else 'FAIL') }}"
+      detail: "{{ 'Unable to evaluate effective config (sshd -T failed)' if not sshd_t_ok else ('Effective Protocol=' ~ proto_effective) }}"
+      evidence: >-
+        {{
+          ('sshd -T: protocol ' ~ proto_effective ~ file_hint)
+          if sshd_t_ok
+          else ('sshd -T failed (rc=' ~ (sshd_effective.rc | string) ~ ').')
+        }}
+      remediation: "Ensure SSH Protocol 2 is used. Modern OpenSSH defaults to protocol 2; avoid legacy settings."

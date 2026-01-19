@@ -1,0 +1,55 @@
+---
+# Main tasks file for linux_security_audit role
+
+- name: Initialize audit context
+  ansible.builtin.set_fact:
+    audit_results: []
+    audit_score: 0
+    total_checks: 0
+
+- name: Display audit banner
+  ansible.builtin.debug:
+    msg: |-
+      ==========================================
+      Linux Security Audit Starting...
+      Target: {{ inventory_hostname }}
+      Profile: {{ audit_profile | default('server') }}
+      Role: {{ system_role | default('generic') }}
+      ==========================================
+
+# Common checks (run for all Linux' server)
+- name: Run SSH checks
+  ansible.builtin.include_tasks: checks/ssh_security.yml
+  tags: [ssh]
+
+- name: Run Firewall checks
+  ansible.builtin.include_tasks: checks/firewall.yml
+  tags: [firewall]
+
+- name: Run Users & Passwords checks
+  ansible.builtin.include_tasks: checks/users_passwords.yml
+  tags: [users]
+
+- name: Run System update checks
+  ansible.builtin.include_tasks: checks/system_update.yml
+  tags: [updates]
+
+- name: Run Network services checks
+  ansible.builtin.include_tasks: checks/network_services.yml
+  tags: [network]
+
+
+# Optional role-specific checks (only if you create these files)
+- name: Run Web server checks
+  ansible.builtin.include_tasks: checks/web.yml
+  when: (system_role | default('generic')) == 'web'
+  tags: [web]
+
+- name: Run Database server checks
+  ansible.builtin.include_tasks: checks/db.yml
+  when: (system_role | default('generic')) == 'db'
+  tags: [db]
+
+- name: Generate report
+  ansible.builtin.include_tasks: report.yml
+  tags: [report]

@@ -1,0 +1,164 @@
+---
+# ---------- METRICS ----------
+
+- name: Compute security score percentage
+  ansible.builtin.set_fact:
+    score_percentage: >-
+      {{
+        (
+          (audit_score | float / total_checks | float)
+          if (total_checks | float) > 0
+          else 0
+        ) * 100
+        | round(1)
+      }}
+
+- name: Compute overall security rating
+  ansible.builtin.set_fact:
+    security_rating: >-
+      {{
+        'EXCELLENT' if (score_percentage | float) >= 90
+        else 'GOOD' if (score_percentage | float) >= 75
+        else 'FAIR' if (score_percentage | float) >= 60
+        else 'POOR'
+      }}
+
+- name: Compute summary counts
+  ansible.builtin.set_fact:
+    summary_fail: "{{ (audit_results | selectattr('status','equalto','FAIL') | list | length) | int }}"
+    summary_warn: "{{ (audit_results | selectattr('status','equalto','WARN') | list | length) | int }}"
+    summary_ok:   "{{ (audit_results | selectattr('status','equalto','OK')   | list | length) | int }}"
+    summary_info: "{{ (audit_results | selectattr('status','equalto','INFO') | list | length) | int }}"
+
+- name: Sort results for stable output
+  ansible.builtin.set_fact:
+    audit_results_sorted: "{{ audit_results | sort(attribute='id') | sort(attribute='category') }}"
+
+
+- name: Set audit run timestamp (controller)
+  ansible.builtin.set_fact:
+    audit_run_iso8601: "{{ lookup('pipe', 'date -Iseconds') }}"
+  delegate_to: localhost
+  run_once: true
+
+# ---------- DISPLAY (CONSOLE) ----------
+
+- name: Display audit results header
+  ansible.builtin.debug:
+    msg: |-
+      ==========================================
+      SECURITY AUDIT REPORT ({{ audit_framework | default('anssi') | upper }})
+      ==========================================
+      Host   : {{ inventory_hostname }}
+      Run    : {{ audit_run_iso8601 }}
+      Profile: {{ audit_profile | default('server') }}
+      Role   : {{ system_role | default('generic') }}
+      ==========================================
+
+- name: Display summary
+  ansible.builtin.debug:
+    msg: |-
+      Summary:
+        FAIL: {{ summary_fail }}
+        WARN: {{ summary_warn }}
+        OK  : {{ summary_ok }}
+        INFO: {{ summary_info }}
+
+- name: Display each check (one line)
+  ansible.builtin.debug:
+    msg: "{{ status_symbol }} [{{ item.severity }}] {{ item.id }} - {{ item.name }}"
+  loop: "{{ audit_results_sorted }}"
+  vars:
+    status_symbol: >-
+      {{
+        '[   OK   ]' if item.status == 'OK'
+        else '[ FAIL ]' if item.status == 'FAIL'
+        else '[ WARN ]' if item.status == 'WARN'
+        else '[ INFO ]'
+      }}
+
+- name: Display actionable findings
+  ansible.builtin.debug:
+    msg: |-
+      ==========================================
+      ACTIONABLE FINDINGS
+      ==========================================
+      {% set findings = (audit_results_sorted | selectattr('status','in',['FAIL','WARN']) | list) %}
+      {% if findings | length == 0 %}
+      None (no FAIL/WARN findings)
+      {% else %}
+      {% for item in findings %}
+      {{ '[ FAIL ]' if item.status == 'FAIL' else '[ WARN ]' }} [{{ item.severity }}] {{ item.id }} - {{ item.name }}
+        Category   : {{ item.category }}
+        Detail     : {{ item.detail }}
+        Evidence   : {{ item.evidence }}
+        Remediation: {{ item.remediation }}
+      {% endfor %}
+      {% endif %}
+
+- name: Display security score
+  ansible.builtin.debug:
+    msg: |-
+      ==========================================
+      SECURITY SCORE
+      ==========================================
+      Score     : {{ audit_score }}/{{ total_checks }}
+      Percentage: {{ score_percentage }}%
+      Rating    : {{ security_rating }}
+      ==========================================
+
+
+# ---------- JSON EXPORT ----------
+
+- name: Build JSON report object
+  ansible.builtin.set_fact:
+    audit_json:
+      meta:
+        tool: "linux_security_audit"
+        framework: "{{ audit_framework | default('anssi') }}"
+        run_at: "{{ audit_run_iso8601 }}"
+        profile: "{{ audit_profile | default('server') }}"
+        role: "{{ system_role | default('generic') }}"
+      target:
+        host: "{{ inventory_hostname }}"
+      score:
+        passed: "{{ audit_score | int }}"
+        total: "{{ total_checks | int }}"
+        percentage: "{{ score_percentage | float }}"
+        rating: "{{ security_rating }}"
+      summary:
+        fail: "{{ summary_fail }}"
+        warn: "{{ summary_warn }}"
+        ok: "{{ summary_ok }}"
+        info: "{{ summary_info }}"
+      results: "{{ audit_results_sorted }}"
+
+- name: Save JSON audit report (one file per host, on controller)
+  ansible.builtin.copy:
+    content: "{{ audit_json | to_nice_json }}"
+    dest: >-
+      {{
+        (report_output_dir | default('/tmp'))
+        ~ '/security_audit_'
+        ~ inventory_hostname
+        ~ '_'
+        ~ (audit_run_iso8601 | regex_replace(':','') | regex_replace('\\+','_') )
+        ~ '.json'
+      }}
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  when: save_report_to_file | default(true) | bool
+
+- name: Report file location
+  ansible.builtin.debug:
+    msg: >-
+      Audit report saved to: {{
+        (report_output_dir | default('/tmp'))
+        ~ '/security_audit_'
+        ~ inventory_hostname
+        ~ '_'
+        ~ (audit_run_iso8601 | regex_replace(':','') | regex_replace('\\+','_') )
+        ~ '.json'
+      }}
+  when: save_report_to_file | default(true) | bool

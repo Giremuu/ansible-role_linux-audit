@@ -1,0 +1,105 @@
+---
+# Network & Services Checks (ANSSI-style, <=150 lines)
+
+# 1) Listening sockets overview (informational, helps spot unexpected exposure)
+- name: NET | Count listening TCP/UDP sockets
+  ansible.builtin.shell: |
+    set -o pipefail
+    ss -H -tulpn 2>/dev/null | wc -l
+  args:
+    executable: /bin/bash
+  register: listen_count
+  changed_when: false
+  failed_when: false
+
+- name: NET | Evaluate listening services (info)
+  ansible.builtin.set_fact:
+    audit_results: "{{ audit_results + [check_result] }}"
+    total_checks: "{{ total_checks | int + 1 }}"
+  vars:
+    n: "{{ listen_count.stdout | int }}"
+    check_result:
+      id: "ANSSI-LIN-NET-01"
+      category: "NETWORK"
+      name: "Listening services inventory"
+      severity: "LOW"
+      status: "INFO"
+      detail: "{{ n }} listening socket(s) detected (review exposure and necessity)"
+      evidence: "ss -tulpn (count) => {{ n }}"
+      remediation: "Disable unnecessary services and restrict exposed ports via host firewall and service configuration"
+
+# 2) Telnet should not be active (legacy cleartext service)
+- name: NET | Check if telnet service is active (systemd)
+  ansible.builtin.command: systemctl is-active telnet
+  register: telnet_active
+  changed_when: false
+  failed_when: false
+
+- name: NET | Evaluate telnet disabled
+  ansible.builtin.set_fact:
+    audit_results: "{{ audit_results + [check_result] }}"
+    audit_score: "{{ audit_score | int + (1 if check_result.status == 'OK' else 0) }}"
+    total_checks: "{{ total_checks | int + 1 }}"
+  vars:
+    # systemctl is-active returns rc!=0 for inactive/not-found; we consider both OK
+    ok: "{{ telnet_active.rc != 0 or (telnet_active.stdout | trim) != 'active' }}"
+    check_result:
+      id: "ANSSI-LIN-NET-02"
+      category: "NETWORK"
+      name: "Telnet service disabled"
+      severity: "HIGH"
+      status: "{{ 'OK' if ok else 'FAIL' }}"
+      detail: "{{ 'telnet is not active' if ok else 'telnet is active' }}"
+      evidence: "systemctl is-active telnet => {{ (telnet_active.stdout | default('')) | trim }} (rc={{ telnet_active.rc }})"
+      remediation: "Remove/disable telnet (use SSH). Ensure no inetd/xinetd telnet listeners are enabled."
+
+# 3) IPv6 status (informational; disabling is not always recommended)
+- name: NET | Read IPv6 disable flag
+  ansible.builtin.command: cat /proc/sys/net/ipv6/conf/all/disable_ipv6
+  register: ipv6_disabled
+  changed_when: false
+  failed_when: false
+
+- name: NET | Evaluate IPv6 configuration (info)
+  ansible.builtin.set_fact:
+    audit_results: "{{ audit_results + [check_result] }}"
+    total_checks: "{{ total_checks | int + 1 }}"
+  vars:
+    disabled: "{{ (ipv6_disabled.stdout | trim | int) == 1 }}"
+    check_result:
+      id: "ANSSI-LIN-NET-03"
+      category: "NETWORK"
+      name: "IPv6 status"
+      severity: "LOW"
+      status: "INFO"
+      detail: "{{ 'Disabled' if disabled else 'Enabled (ensure properly configured if used)' }}"
+      evidence: "/proc/sys/net/ipv6/conf/all/disable_ipv6 => {{ ipv6_disabled.stdout | trim }}"
+      remediation: "If IPv6 is enabled, ensure firewalling and services also cover IPv6; disable only if policy requires and you understand impact"
+
+# 4) World-writable files in core system dirs (risk of tampering)
+- name: FS | Count world-writable files in system directories
+  ansible.builtin.shell: |
+    set -o pipefail
+    find /etc /usr/bin /usr/sbin -xdev -type f -perm -0002 2>/dev/null | wc -l
+  args:
+    executable: /bin/bash
+  register: ww_count
+  changed_when: false
+  failed_when: false
+
+- name: FS | Evaluate world-writable system files
+  ansible.builtin.set_fact:
+    audit_results: "{{ audit_results + [check_result] }}"
+    audit_score: "{{ audit_score | int + (1 if check_result.status == 'OK' else 0) }}"
+    total_checks: "{{ total_checks | int + 1 }}"
+  vars:
+    n: "{{ ww_count.stdout | int }}"
+    check_result:
+      id: "ANSSI-LIN-FS-01"
+      category: "FILESYSTEM"
+      name: "No world-writable files in system directories"
+      severity: "HIGH"
+      status: "{{ 'OK' if n == 0 else 'WARN' }}"
+      detail: "{{ n }} world-writable file(s) found under /etc, /usr/bin, /usr/sbin"
+      evidence: "find /etc /usr/bin /usr/sbin -perm -0002 (count) => {{ n }}"
+      remediation: "Remove world-writable permissions from system files; investigate any unexpected writable binaries/configs"

@@ -1,0 +1,31 @@
+---
+# Checks: syntax validity, indentation (2 spaces), line length...
+
+extends: default
+
+rules:
+  line-length:
+    max: 120
+    level: warning
+
+  indentation:
+    spaces: 2
+
+  truthy:
+    allowed-values: ['true', 'false']
+
+  # Required by ansible-lint
+  comments:
+    min-spaces-from-content: 1
+
+  comments-indentation: false
+
+  braces:
+    max-spaces-inside: 1
+
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true
+
+ignore: |
+  .github/

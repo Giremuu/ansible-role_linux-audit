@@ -1,0 +1,11 @@
+profile: production
+
+skip_list:
+  - name[casing]
+
+warn_list:
+  - experimental
+
+exclude_paths:
+  - .github/
+  - group_vars/vault.yml

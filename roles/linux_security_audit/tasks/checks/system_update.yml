@@ -1,0 +1,87 @@
+---
+# System Updates Checks (Debian/Ubuntu apt) - ANSSI-style, <=150 lines
+
+# 1) Pending upgrades (including security) - fast + reliable
+- name: UPDATES | Refresh apt cache (read-only)
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  changed_when: false
+  failed_when: false
+
+- name: UPDATES | Count upgradable packages
+  ansible.builtin.shell: |
+    set -o pipefail
+    apt-get -s upgrade 2>/dev/null | awk '/^Inst /{c++} END{print c+0}'
+  args:
+    executable: /bin/bash
+  register: upgradable_count
+  changed_when: false
+  failed_when: false
+
+- name: UPDATES | Evaluate pending upgrades
+  ansible.builtin.set_fact:
+    audit_results: "{{ audit_results + [check_result] }}"
+    audit_score: "{{ audit_score | int + (1 if check_result.status == 'OK' else 0) }}"
+    total_checks: "{{ total_checks | int + 1 }}"
+  vars:
+    n: "{{ upgradable_count.stdout | int }}"
+    check_result:
+      id: "ANSSI-LIN-UPD-01"
+      category: "UPDATES"
+      name: "No pending package upgrades"
+      severity: "MEDIUM"
+      status: "{{ 'OK' if n == 0 else 'WARN' }}"
+      detail: "{{ n }} package(s) are upgradable"
+      evidence: "apt-get -s upgrade => {{ n }} upgradable"
+      remediation: "Apply updates regularly (apt update && apt upgrade). Prioritize security updates."
+
+# 2) Automatic security updates (unattended-upgrades installed)
+- name: UPDATES | Check unattended-upgrades package presence
+  ansible.builtin.command: dpkg-query -W -f='${Status}\n' unattended-upgrades
+  register: unattended_pkg
+  changed_when: false
+  failed_when: false
+
+- name: UPDATES | Evaluate unattended-upgrades installed
+  ansible.builtin.set_fact:
+    audit_results: "{{ audit_results + [check_result] }}"
+    audit_score: "{{ audit_score | int + (1 if check_result.status == 'OK' else 0) }}"
+    total_checks: "{{ total_checks | int + 1 }}"
+  vars:
+    installed: "{{ unattended_pkg.rc == 0 and 'install ok installed' in (unattended_pkg.stdout | lower) }}"
+    check_result:
+      id: "ANSSI-LIN-UPD-02"
+      category: "UPDATES"
+      name: "Automatic security updates capability (unattended-upgrades installed)"
+      severity: "MEDIUM"
+      status: "{{ 'OK' if installed else 'WARN' }}"
+      detail: "{{ 'unattended-upgrades is installed' if installed else 'unattended-upgrades is not installed' }}"
+      evidence: "dpkg-query unattended-upgrades rc={{ unattended_pkg.rc }} stdout={{ unattended_pkg.stdout | trim }}"
+      remediation: "Install and configure unattended-upgrades for automatic security updates when appropriate."
+
+# 3) Uptime threshold (kernel updates/reboots hygiene)
+- name: HYGIENE | Get system uptime (days)
+  ansible.builtin.shell: |
+    awk '{print int($1/86400)}' /proc/uptime
+  register: uptime_days
+  changed_when: false
+  failed_when: false
+
+- name: HYGIENE | Evaluate system uptime threshold
+  ansible.builtin.set_fact:
+    audit_results: "{{ audit_results + [check_result] }}"
+    audit_score: "{{ audit_score | int + (1 if check_result.status == 'OK' else 0) }}"
+    total_checks: "{{ total_checks | int + 1 }}"
+  vars:
+    days: "{{ uptime_days.stdout | int }}"
+    threshold: "{{ max_uptime_days | int }}"
+    check_result:
+      id: "ANSSI-LIN-HYG-01"
+      category: "HYGIENE"
+      name: "System uptime within policy"
+      severity: "LOW"
+      status: "{{ 'OK' if days <= threshold else 'WARN' }}"
+      detail: "{{ days }} day(s) uptime (threshold: {{ threshold }})"
+      evidence: "/proc/uptime => {{ days }} days"
+      remediation: "Plan reboot windows after kernel/security updates (consider livepatch if applicable)."

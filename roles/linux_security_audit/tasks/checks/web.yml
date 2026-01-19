@@ -1,0 +1,133 @@
+---
+# Web server checks (generic) - ANSSI-style, <=150 lines
+
+- name: WEB | Detect web server packages (nginx/apache2)
+  ansible.builtin.shell: |
+    dpkg-query -W -f='${Package}\n' nginx 2>/dev/null || true
+    dpkg-query -W -f='${Package}\n' apache2 2>/dev/null || true
+  register: web_pkgs
+  changed_when: false
+  failed_when: false
+
+- name: WEB | Evaluate web server installed (info)
+  ansible.builtin.set_fact:
+    audit_results: "{{ audit_results + [check_result] }}"
+    total_checks: "{{ total_checks | int + 1 }}"
+  vars:
+    detected: "{{ (web_pkgs.stdout_lines | default([])) }}"
+    check_result:
+      id: "ANSSI-LIN-WEB-01"
+      category: "WEB"
+      name: "Web server detected"
+      severity: "LOW"
+      status: "INFO"
+      detail: "{{ detected | length | ternary('Detected: ' ~ (detected | join(', ')), 'No nginx/apache2 package detected') }}"
+      evidence: "dpkg-query nginx/apache2 => {{ detected | join(', ') }}"
+      remediation: "If a web server is not required, remove it; otherwise harden configuration and restrict exposure"
+
+- name: WEB | Check if ports 80/443 are listening
+  ansible.builtin.shell: |
+    set -o pipefail
+    ss -H -ltn 2>/dev/null | awk '{print $4}' | grep -E ':(80|443)$' | wc -l
+  args:
+    executable: /bin/bash
+  register: web_listen
+  changed_when: false
+  failed_when: false
+
+- name: WEB | Evaluate exposure (info)
+  ansible.builtin.set_fact:
+    audit_results: "{{ audit_results + [check_result] }}"
+    total_checks: "{{ total_checks | int + 1 }}"
+  vars:
+    n: "{{ web_listen.stdout | int }}"
+    check_result:
+      id: "ANSSI-LIN-WEB-02"
+      category: "WEB"
+      name: "HTTP/HTTPS listening sockets"
+      severity: "LOW"
+      status: "INFO"
+      detail: "{{ n }} socket(s) listening on TCP 80/443"
+      evidence: "ss ports 80/443 count => {{ n }}"
+      remediation: "Ensure only required interfaces/ports are exposed; restrict via firewall and bind addresses"
+
+- name: WEB | Check HTTPS availability (any 443 listener)
+  ansible.builtin.shell: |
+    set -o pipefail
+    ss -H -ltn 2>/dev/null | awk '{print $4}' | grep -qE ':443$' && echo yes || echo no
+  args:
+    executable: /bin/bash
+  register: https_listen
+  changed_when: false
+  failed_when: false
+
+- name: WEB | Evaluate HTTPS present when web is exposed
+  ansible.builtin.set_fact:
+    audit_results: "{{ audit_results + [check_result] }}"
+    audit_score: "{{ audit_score | int + (1 if check_result.status == 'OK' else 0) }}"
+    total_checks: "{{ total_checks | int + 1 }}"
+  vars:
+    http_exposed: "{{ (web_listen.stdout | int) > 0 }}"
+    has_https: "{{ (https_listen.stdout | trim) == 'yes' }}"
+    check_result:
+      id: "ANSSI-LIN-WEB-03"
+      category: "WEB"
+      name: "Prefer HTTPS when web service is exposed"
+      severity: "HIGH"
+      status: >-
+        {{
+          'INFO' if not http_exposed
+          else 'OK' if has_https
+          else 'WARN'
+        }}
+      detail: >-
+        {{
+          'No 80/443 listener detected'
+          if not http_exposed
+          else ('443 listening' if has_https else 'No 443 listener detected (HTTPS missing)')
+        }}
+      evidence: "443_listening={{ has_https | string }}, 80/443_count={{ web_listen.stdout | trim }}"
+      remediation: "Serve content over TLS (443), redirect HTTP to HTTPS, and disable cleartext where possible"
+
+- name: WEB | Check server tokens / version disclosure (nginx/apache common)
+  ansible.builtin.shell: |
+    set -o pipefail
+    # nginx: "server_tokens off;" or default (on)
+    if [ -f /etc/nginx/nginx.conf ]; then
+      grep -RInE '^[[:space:]]*server_tokens[[:space:]]+off;' /etc/nginx/nginx.conf /etc/nginx/conf.d 2>/dev/null | head -n1 && exit 0
+      echo "nginx_server_tokens_not_off" && exit 0
+    fi
+    # apache: "ServerTokens Prod" recommended
+    if [ -f /etc/apache2/apache2.conf ]; then
+      grep -RInE '^[[:space:]]*ServerTokens[[:space:]]+Prod' /etc/apache2 2>/dev/null | head -n1 && exit 0
+      echo "apache_servertokens_not_prod" && exit 0
+    fi
+    echo "no_web_conf_found"
+  args:
+    executable: /bin/bash
+  register: version_disclosure
+  changed_when: false
+  failed_when: false
+
+- name: WEB | Evaluate version disclosure hardening
+  ansible.builtin.set_fact:
+    audit_results: "{{ audit_results + [check_result] }}"
+    audit_score: "{{ audit_score | int + (1 if check_result.status == 'OK' else 0) }}"
+    total_checks: "{{ total_checks | int + 1 }}"
+  vars:
+    out: "{{ version_disclosure.stdout | trim }}"
+    ok: "{{ out != 'nginx_server_tokens_not_off' and out != 'apache_servertokens_not_prod' and out != 'no_web_conf_found' }}"
+    check_result:
+      id: "ANSSI-LIN-WEB-04"
+      category: "WEB"
+      name: "Limit web server version disclosure"
+      severity: "MEDIUM"
+      status: >-
+        {{
+          'INFO' if out == 'no_web_conf_found'
+          else 'OK' if ok
+          else 'WARN'
+        }}
+      detail: "{{ out }}"
+      evidence: "version_disclosure_probe => {{ out }} (rc={{ version_disclosure.rc }})"
+      remediation: "Harden nginx (server_tokens off) or Apache (ServerTokens Prod; ServerSignature Off) to reduce information leakage"
