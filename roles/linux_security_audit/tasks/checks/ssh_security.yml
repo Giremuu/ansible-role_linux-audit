@@ -100,7 +100,7 @@
         }}
       remediation: "Set 'PermitRootLogin no' in sshd config (or drop-in) and reload sshd."
 
-- name: SSH | Evaluate PasswordAuthentication (strict: no)
+- name: SSH | Evaluate PasswordAuthentication
   ansible.builtin.set_fact:
     audit_results: "{{ audit_results + [check_result] }}"
     audit_score: "{{ audit_score | int + (1 if check_result.status == 'OK' else 0) }}"
