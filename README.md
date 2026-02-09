@@ -1,5 +1,8 @@
 # Linux Security Audit (ANSSI‑inspired)
 
+[![CI](https://github.com/Giremuu/ansible-role_linux-audit/actions/workflows/ci.yml/badge.svg)](https://github.com/Giremuu/ansible-role_linux-audit/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **Start:** November 2025
 **Version :** N°1
 
@@ -167,3 +170,13 @@ host_vars/<hostname>/vault.yml
 ---
 
 **Audit‑only. No remediation.**
+
+---
+
+## License
+MIT - see [LICENSE](LICENSE) file.
+
+
+## Author
+
+Giremuu - [GitHub Profile](https://github.com/Giremuu)
