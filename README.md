@@ -1,4 +1,4 @@
-# Linux Security Audit (ANSSI‑inspired)
+# Suzune_Check : Linux Security Audit (ANSSI‑inspired)
 
 [![CI](https://github.com/Giremuu/ansible-role_linux-audit/actions/workflows/ci.yml/badge.svg)](https://github.com/Giremuu/ansible-role_linux-audit/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
